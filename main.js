@@ -7,7 +7,49 @@ const fs = require("fs");
 // Returns: string formatted as h:mm:ss
 // ============================================================
 function getShiftDuration(startTime, endTime) {
-    // TODO: Implement this function
+    function convertToSeconds(time) {
+        let parts = time.split(" ");
+        let clock = parts[0].split(":");
+        let period = parts[1];
+
+        let hours = Number(clock[0]);
+        let minutes = Number(clock[1]);
+        let seconds = Number(clock[2]);
+
+        if (period === "am" && hours === 12) {
+            hours = 0;
+        }
+        if (period === "pm" && hours !== 12) {
+            hours = hours + 12;
+        }
+
+        return hours * 3600 + minutes * 60 + seconds;
+    }
+
+    let start = convertToSeconds(startTime);
+    let end = convertToSeconds(endTime);
+
+    if (end < start) {
+        end = end + 24 * 3600;
+    }
+
+    let total = end - start;
+
+    let hours = Math.floor(total / 3600);
+    total = total % 3600;
+
+    let minutes = Math.floor(total / 60);
+    let seconds = total % 60;
+
+    if (minutes < 10) {
+        minutes = "0" + minutes;
+    }
+    if (seconds < 10) {
+        seconds = "0" + seconds;
+    }
+
+    return hours + ":" + minutes + ":" + seconds;
+
 }
 
 // ============================================================
@@ -17,7 +59,51 @@ function getShiftDuration(startTime, endTime) {
 // Returns: string formatted as h:mm:ss
 // ============================================================
 function getIdleTime(startTime, endTime) {
-    // TODO: Implement this function
+
+    function convert(time) {
+        let parts = time.split(" ");
+        let clock = parts[0].split(":");
+        let period = parts[1];
+
+        let h = Number(clock[0]);
+        let m = Number(clock[1]);
+        let s = Number(clock[2]);
+
+        if (period === "am" && h === 12) h = 0;
+        if (period === "pm" && h !== 12) h = h + 12;
+
+        return h*3600 + m*60 + s;
+    }
+
+    let start = convert(startTime);
+    let end = convert(endTime);
+
+    if (end < start) {
+        end = end + 24*3600;
+    }
+
+    let open = 8 * 3600;
+    let close = 22 * 3600;
+
+    let idle = 0;
+
+    if (start < open) {
+        idle += Math.min(end, open) - start;
+    }
+
+    if (end > close) {
+        idle += end - Math.max(start, close);
+    }
+
+    let h = Math.floor(idle / 3600);
+    idle = idle % 3600;
+    let m = Math.floor(idle / 60);
+    let s = idle % 60;
+
+    if (m < 10) m = "0" + m;
+    if (s < 10) s = "0" + s;
+
+    return h + ":" + m + ":" + s;
 }
 
 // ============================================================
@@ -27,7 +113,38 @@ function getIdleTime(startTime, endTime) {
 // Returns: string formatted as h:mm:ss
 // ============================================================
 function getActiveTime(shiftDuration, idleTime) {
-    // TODO: Implement this function
+    let shiftParts = shiftDuration.split(":");
+    let idleParts = idleTime.split(":");
+
+    let shiftSeconds = Number(shiftParts[0]) * 3600
+        + Number(shiftParts[1]) * 60
+        + Number(shiftParts[2]);
+
+    let idleSeconds = Number(idleParts[0]) * 3600
+        + Number(idleParts[1]) * 60
+        + Number(idleParts[2]);
+
+    let activeSeconds = shiftSeconds - idleSeconds;
+
+    if (activeSeconds < 0) {
+        activeSeconds = 0;
+    }
+
+    let hours = Math.floor(activeSeconds / 3600);
+    activeSeconds = activeSeconds % 3600;
+
+    let minutes = Math.floor(activeSeconds / 60);
+    let seconds = activeSeconds % 60;
+
+    if (minutes < 10) {
+        minutes = "0" + minutes;
+    }
+
+    if (seconds < 10) {
+        seconds = "0" + seconds;
+    }
+
+    return hours + ":" + minutes + ":" + seconds;
 }
 
 // ============================================================
@@ -37,7 +154,24 @@ function getActiveTime(shiftDuration, idleTime) {
 // Returns: boolean
 // ============================================================
 function metQuota(date, activeTime) {
-    // TODO: Implement this function
+    let parts = activeTime.split(":");
+    let hours = Number(parts[0]);
+    let minutes = Number(parts[1]);
+    let seconds = Number(parts[2]);
+
+    let totalSeconds = hours * 3600 + minutes * 60 + seconds;
+
+    let neededSeconds = 8 * 3600 + 24 * 60;
+
+    if (date >= "2025-04-10" && date <= "2025-04-30") {
+        neededSeconds = 6 * 3600;
+    }
+
+    if (totalSeconds >= neededSeconds) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 // ============================================================
@@ -47,7 +181,65 @@ function metQuota(date, activeTime) {
 // Returns: object with 10 properties or empty object {}
 // ============================================================
 function addShiftRecord(textFile, shiftObj) {
-    // TODO: Implement this function
+    let fileData = fs.readFileSync(textFile, { encoding: "utf8" });
+    let lines = fileData.trim().split("\n");
+
+    let driverID = shiftObj.driverID;
+    let driverName = shiftObj.driverName;
+    let date = shiftObj.date;
+    let startTime = shiftObj.startTime;
+    let endTime = shiftObj.endTime;
+
+    // check duplicate
+    for (let i = 1; i < lines.length; i++) {
+        let parts = lines[i].split(",");
+        if (parts[0] === driverID && parts[2] === date) {
+            return {};
+        }
+    }
+
+    let shiftDuration = getShiftDuration(startTime, endTime);
+    let idleTime = getIdleTime(startTime, endTime);
+    let activeTime = getActiveTime(shiftDuration, idleTime);
+    let quota = metQuota(date, activeTime);
+    let hasBonus = false;
+
+    let newObj = {
+        driverID: driverID,
+        driverName: driverName,
+        date: date,
+        startTime: startTime,
+        endTime: endTime,
+        shiftDuration: shiftDuration,
+        idleTime: idleTime,
+        activeTime: activeTime,
+        metQuota: quota,
+        hasBonus: hasBonus
+    };
+
+    let newLine = driverID + "," + driverName + "," + date + "," + startTime + "," + endTime + "," +
+                  shiftDuration + "," + idleTime + "," + activeTime + "," + quota + "," + hasBonus;
+
+    let insertIndex = lines.length;
+    let foundDriver = false;
+
+    for (let i = 1; i < lines.length; i++) {
+        let parts = lines[i].split(",");
+        if (parts[0] === driverID) {
+            insertIndex = i + 1;
+            foundDriver = true;
+        }
+    }
+
+    if (foundDriver) {
+        lines.splice(insertIndex, 0, newLine);
+    } else {
+        lines.push(newLine);
+    }
+
+    fs.writeFileSync(textFile, lines.join("\n"), { encoding: "utf8" });
+
+    return newObj;
 }
 
 // ============================================================
@@ -59,7 +251,19 @@ function addShiftRecord(textFile, shiftObj) {
 // Returns: nothing (void)
 // ============================================================
 function setBonus(textFile, driverID, date, newValue) {
-    // TODO: Implement this function
+    let data = fs.readFileSync(textFile, "utf8");
+    let lines = data.trim().split("\n");
+
+    for (let i = 1; i < lines.length; i++) {
+        let parts = lines[i].split(",");
+
+        if (parts[0] === driverID && parts[2] === date) {
+            parts[9] = String(newValue);
+            lines[i] = parts.join(",");
+        }
+    }
+
+    fs.writeFileSync(textFile, lines.join("\n"), "utf8");
 }
 
 // ============================================================
@@ -70,7 +274,41 @@ function setBonus(textFile, driverID, date, newValue) {
 // Returns: number (-1 if driverID not found)
 // ============================================================
 function countBonusPerMonth(textFile, driverID, month) {
-    // TODO: Implement this function
+    let data = fs.readFileSync(textFile, "utf8");
+    let lines = data.trim().split("\n");
+
+    let count = 0;
+    let found = false;
+
+    month = String(month);
+    if (month.length === 1) {
+        month = "0" + month;
+    }
+
+    for (let i = 1; i < lines.length; i++) {
+        let parts = lines[i].split(",");
+
+        let id = parts[0];
+        let date = parts[2];
+        let bonus = parts[9].trim();
+
+        if (id === driverID) {
+            found = true;
+
+            let dateParts = date.split("-");
+            let recordMonth = dateParts[1];
+
+            if (recordMonth === month && bonus === "true") {
+                count++;
+            }
+        }
+    }
+
+    if (found === false) {
+        return -1;
+    }
+
+    return count;
 }
 
 // ============================================================
